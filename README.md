@@ -119,8 +119,5 @@ Open `http://127.0.0.1:5173/` in your browser.
 
 ## 👥 Demo Student Accounts (Included in Navbar Demo Switcher)
 Use the **"Demo User"** dropdown in the top navigation bar to test interactions between different students without manually logging in/out:
-- **Priya Sharma** (`priya.sharma@campus.edu` / `password123`) — *CSE 3rd Yr, Seller & Active Buyer*
-- **Rohan Verma** (`rohan.verma@campus.edu` / `password123`) — *Mech 2nd Yr, Calculator & Drafter owner*
-- **Aarav Patel** (`aarav.patel@campus.edu` / `password123`) — *ECE 4th Yr, Arduino kit & Laptop Stand*
-- **Ananya Iyer** (`ananya.iyer@campus.edu` / `password123`) — *IT 2nd Yr, DBMS Textbook & Study Lamp*
+username --> "admin@gmail.com" password-->"admin21"
 
