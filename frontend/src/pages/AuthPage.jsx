@@ -460,7 +460,7 @@ export default function AuthPage() {
                     <input
                       type="text"
                       required
-                      placeholder="e.g. Aarav Patel"
+                      placeholder="e.g. Your Full Name"
                       value={regFullName}
                       onChange={(e) => setRegFullName(e.target.value)}
                       style={{
@@ -482,7 +482,7 @@ export default function AuthPage() {
                     <input
                       type="email"
                       required
-                      placeholder="e.g. aarav.patel@campus.edu"
+                      placeholder="e.g. yourname@campus.edu"
                       value={regEmail}
                       onChange={(e) => setRegEmail(e.target.value)}
                       style={{

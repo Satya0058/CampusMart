@@ -16,7 +16,8 @@ import {
   Headphones,
   Lamp,
   HelpCircle,
-  RotateCcw
+  RotateCcw,
+  Shirt
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
@@ -29,6 +30,7 @@ const CATEGORIES = [
   { id: "Electronics", label: "Electronics", icon: Cpu },
   { id: "Lab Equipment", label: "Lab Gear", icon: FlaskConical },
   { id: "Stationery", label: "Stationery", icon: PenTool },
+  { id: "Fashion", label: "Fashion", icon: Shirt },
   { id: "Accessories", label: "Accessories", icon: Headphones },
   { id: "Hostel Essentials", label: "Hostel Essentials", icon: Lamp },
   { id: "Sports", label: "Sports", icon: Trophy },

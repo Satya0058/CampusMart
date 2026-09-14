@@ -129,7 +129,7 @@ export default function AuthModal({ onClose, defaultTab = "login" }) {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Priya Sharma"
+                  placeholder="e.g. Your Full Name"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   required

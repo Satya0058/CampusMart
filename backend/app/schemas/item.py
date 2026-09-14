@@ -64,6 +64,13 @@ class ItemOut(BaseModel):
     images: List[ItemImageOut] = []
     seller: Optional[UserOut] = None
 
+    # AI Safety & Moderation
+    ai_decision: Optional[str] = "PENDING"
+    ai_confidence: Optional[float] = None
+    ai_risk_level: Optional[str] = None
+    ai_reason: Optional[str] = None
+    ai_scanned_at: Optional[datetime] = None
+
     # Computed fields for frontend convenience
     savings_amount: Optional[float] = None
     discount_percentage: Optional[int] = None

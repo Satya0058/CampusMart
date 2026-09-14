@@ -87,6 +87,7 @@ export const api = {
   updateItemStatus: (id, status) => request(`/api/items/${id}/status`, { method: "PUT", body: JSON.stringify({ status }) }),
   deleteItem: (id) => request(`/api/items/${id}`, { method: "DELETE" }),
   uploadImage: (formData) => request("/api/items/upload-image", { method: "POST", body: formData }),
+  checkItemSafety: (data) => request("/api/items/safety-check", { method: "POST", body: JSON.stringify(data) }),
   sendBuyRequest: (itemId, data) => request(`/api/items/${itemId}/buy-request`, { method: "POST", body: JSON.stringify(data) }),
 
   // Exchange

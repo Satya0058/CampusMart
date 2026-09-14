@@ -76,9 +76,28 @@ export default function Sidebar({ currentPage, onNavigate, onOpenAddItem }) {
               filter: "drop-shadow(0 2px 6px rgba(0,0,0,0.3))"
             }}
           />
-          <span style={{ fontSize: "1.25rem", fontWeight: 800, letterSpacing: "-0.03em", color: "#FEFEFE" }}>
-            Campus<span style={{ color: isSeller ? "#0C87FD" : "#C8EA3E" }}>Mart</span>
-          </span>
+          <div>
+            <span style={{ fontSize: "1.25rem", fontWeight: 800, letterSpacing: "-0.03em", color: "#FEFEFE", display: "block", lineHeight: 1.15 }}>
+              Campus<span style={{ color: isSeller ? "#0C87FD" : "#C8EA3E" }}>Mart</span>
+            </span>
+            <div style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px",
+              marginTop: "4px",
+              fontSize: "0.62rem",
+              fontWeight: 700,
+              letterSpacing: "0.03em",
+              color: isSeller ? "#60A5FA" : "#A3E635",
+              background: isSeller ? "rgba(12, 135, 253, 0.12)" : "rgba(200, 234, 62, 0.12)",
+              padding: "2px 6px",
+              borderRadius: "4px",
+              border: `1px solid ${isSeller ? "rgba(12, 135, 253, 0.25)" : "rgba(200, 234, 62, 0.25)"}`
+            }}>
+              <ShieldCheck size={11} />
+              <span>AI SafeGuard</span>
+            </div>
+          </div>
         </div>
 
         {/* Navigation List */}

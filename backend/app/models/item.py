@@ -30,6 +30,13 @@ class Item(Base):
     views = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # AI Safety & Moderation
+    ai_decision = Column(String, default="PENDING") # PENDING, APPROVE, REVIEW, BLOCK
+    ai_confidence = Column(Float, nullable=True)
+    ai_risk_level = Column(String, nullable=True) # LOW, MEDIUM, HIGH
+    ai_reason = Column(Text, nullable=True)
+    ai_scanned_at = Column(DateTime, nullable=True)
+
     # Relationships
     seller = relationship("User", back_populates="items", foreign_keys=[seller_id])
     images = relationship("ItemImage", back_populates="item", cascade="all, delete-orphan")

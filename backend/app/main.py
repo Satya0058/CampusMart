@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from backend.app.database import Base, engine, BASE_DIR
+from backend.app.database import Base, engine, BASE_DIR, migrate_db
 from backend.app.routers import (
     auth_router,
     users_router,
@@ -27,6 +27,7 @@ from backend.app.routers import (
 
 # Ensure database tables exist in campusmate.db
 Base.metadata.create_all(bind=engine)
+migrate_db()
 
 # Ensure uploads directory exists
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")

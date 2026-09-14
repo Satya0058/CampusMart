@@ -22,6 +22,7 @@ const CATEGORIES = [
   "Electronics",
   "Lab Equipment",
   "Stationery",
+  "Fashion",
   "Furniture",
   "Sports",
   "Accessories",

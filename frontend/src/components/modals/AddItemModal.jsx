@@ -1,13 +1,17 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   X, 
   Upload, 
-  Trash2, 
   Sparkles, 
   PlusCircle, 
-  Image as ImageIcon,
-  Check,
-  AlertCircle
+  Check, 
+  AlertCircle,
+  ShieldCheck,
+  ShieldAlert,
+  AlertTriangle,
+  Loader2,
+  RefreshCw,
+  Camera
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useNotifications } from '../../context/NotificationContext';
@@ -18,6 +22,7 @@ const CATEGORIES = [
   "Electronics",
   "Lab Equipment",
   "Stationery",
+  "Fashion",
   "Furniture",
   "Sports",
   "Accessories",
@@ -27,6 +32,7 @@ const CATEGORIES = [
 
 export default function AddItemModal({ onClose, onSuccess, initialMode = "sell" }) {
   const { showToast } = useNotifications();
+  const fileInputRef = useRef(null);
 
   // Mode selection state (can select multiple!)
   const [isSell, setIsSell] = useState(initialMode === "sell" || initialMode === "all");
@@ -45,7 +51,12 @@ export default function AddItemModal({ onClose, onSuccess, initialMode = "sell" 
   const [productUrl, setProductUrl] = useState("");
   const [images, setImages] = useState([]);
 
+  // AI Safety Intelligence State
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [aiScanning, setAiScanning] = useState(false);
+  const [scanStep, setScanStep] = useState(0);
+  const [aiVerdict, setAiVerdict] = useState(null);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [aiGenerating, setAiGenerating] = useState(false);
@@ -63,7 +74,7 @@ export default function AddItemModal({ onClose, onSuccess, initialMode = "sell" 
     return null;
   }, [isSell, originalPrice, sellingPrice]);
 
-  // AI Description Generator placeholder
+  // AI Description Generator
   const handleGenerateAiDescription = () => {
     if (!title) {
       showToast("Please enter an item title first to generate AI description.", "warning");
@@ -79,33 +90,132 @@ export default function AddItemModal({ onClose, onSuccess, initialMode = "sell" 
     }, 700);
   };
 
+  // Run AI Safety Scan
+  const runAiSafetyScan = async (imageUrl, currentTitle = title, currentCat = category, currentDesc = description, notify = true) => {
+    if (!imageUrl) return;
+    setAiScanning(true);
+    setScanStep(1);
+    setError(null);
+
+    // Progressive stage animation timer
+    const interval = setInterval(() => {
+      setScanStep((prev) => (prev < 4 ? prev + 1 : prev));
+    }, 400);
+
+    try {
+      const result = await api.checkItemSafety({
+        image_url: imageUrl,
+        title: currentTitle,
+        category: currentCat,
+        description: currentDesc
+      });
+
+      clearInterval(interval);
+      setScanStep(5);
+      setAiVerdict(result);
+
+      if (result.decision === "APPROVE") {
+        if (notify) {
+          showToast(`🛡️ AI Verified: ${result.object_detected} approved!`, "success");
+        }
+        // Auto-suggest title if empty and detected object is specific
+        if (!currentTitle && result.object_detected && result.object_detected !== "Unknown Object" && !result.object_detected.includes("Physical item")) {
+          setTitle(result.object_detected);
+        }
+        // Auto-suggest category if appropriate
+        const detectedLower = (result.object_detected || "").toLowerCase();
+        if (detectedLower.includes("calc")) setCategory("Calculators");
+        else if (detectedLower.includes("book") || detectedLower.includes("notebook")) setCategory("Books");
+        else if (detectedLower.includes("laptop") || detectedLower.includes("keyboard") || detectedLower.includes("mouse")) setCategory("Electronics");
+        else if (detectedLower.includes("backpack") || detectedLower.includes("bag")) setCategory("Accessories");
+        else if (detectedLower.includes("bike") || detectedLower.includes("bicycle") || detectedLower.includes("cycle")) setCategory("Sports");
+        else if (detectedLower.includes("pen") || detectedLower.includes("scale") || detectedLower.includes("ruler") || detectedLower.includes("drafter")) setCategory("Stationery");
+        else if (detectedLower.includes("shirt") || detectedLower.includes("hoodie") || detectedLower.includes("shoe") || detectedLower.includes("jean")) setCategory("Fashion");
+      } else if (result.decision === "REVIEW") {
+        if (notify) {
+          showToast("⚠️ Additional listing details or review required.", "warning");
+        }
+      } else if (result.decision === "BLOCK") {
+        showToast("✕ Item violates CampusMart Safety Policy.", "error");
+      }
+    } catch (err) {
+      clearInterval(interval);
+      setAiVerdict({
+        decision: "REVIEW",
+        object_detected: "Unverified Item",
+        object_confidence: 0,
+        risk_level: "MEDIUM",
+        reason: err.message || "Safety scan service temporarily unavailable. Listing requires manual review."
+      });
+    } finally {
+      setAiScanning(false);
+    }
+  };
+
+  // Automatically re-verify with multimodal listing details when title or category is entered
+  useEffect(() => {
+    if (!images.length) return;
+    if (aiVerdict && aiVerdict.decision === "BLOCK") return;
+    if (!title.trim() && (!category || category === "Others")) return;
+
+    const timer = setTimeout(() => {
+      runAiSafetyScan(images[0], title, category, description, false);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [title, category]);
+
   // Image Upload Handling
   const handleImageUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
 
     setUploadingImage(true);
+    setError(null);
     try {
+      const uploadedUrls = [];
       for (const file of files) {
         const formData = new FormData();
         formData.append("file", file);
         const res = await api.uploadImage(formData);
-        setImages((prev) => [...prev, res.url]);
+        uploadedUrls.push(res.url);
       }
-      showToast("Image uploaded successfully!", "success");
+      setImages((prev) => [...prev, ...uploadedUrls]);
+      const primaryUrl = images.length > 0 ? images[0] : uploadedUrls[0];
+      await runAiSafetyScan(primaryUrl);
     } catch (err) {
       showToast(err.message || "Failed to upload image", "error");
     } finally {
       setUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
   const removeImage = (index) => {
-    setImages((prev) => prev.filter((_, i) => i !== index));
+    const next = images.filter((_, i) => i !== index);
+    setImages(next);
+    if (next.length === 0) {
+      setAiVerdict(null);
+      setScanStep(0);
+    } else if (index === 0) {
+      runAiSafetyScan(next[0]);
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError(null);
+
+    // Safety checks
+    if (!images.length) {
+      setError("A photo of the item is mandatory. Please upload an image first.");
+      return;
+    }
+    if (!aiVerdict || aiVerdict.decision !== "APPROVE") {
+      setError("Cannot publish listing: Only items verified and approved by CampusMart AI Safety Intelligence can be published.");
+      return;
+    }
+
     if (!isSell && !isRent && !isExchange) {
       setError("Please select at least one transaction mode (Sell, Rent, or Exchange).");
       return;
@@ -124,7 +234,6 @@ export default function AddItemModal({ onClose, onSuccess, initialMode = "sell" 
     }
 
     setSubmitting(true);
-    setError(null);
 
     try {
       await api.createItem({
@@ -146,7 +255,7 @@ export default function AddItemModal({ onClose, onSuccess, initialMode = "sell" 
       showToast(
         isExchange && !isSell && !isRent
           ? "Item listed for direct peer exchange!"
-          : "Listing published to campus marketplace!",
+          : "Listing verified & published to campus marketplace!",
         "success"
       );
       if (onSuccess) onSuccess();
@@ -160,7 +269,7 @@ export default function AddItemModal({ onClose, onSuccess, initialMode = "sell" 
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "620px" }}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "660px", maxHeight: "90vh", overflowY: "auto" }}>
         {/* Header */}
         <div style={{
           display: "flex",
@@ -171,7 +280,7 @@ export default function AddItemModal({ onClose, onSuccess, initialMode = "sell" 
         }}>
           <div>
             <h3 style={{ fontSize: "1.15rem", fontWeight: 700 }}>Create Campus Listing</h3>
-            <p style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Reach verified students across campus blocks</p>
+            <p style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Reach verified students with AI safety verification</p>
           </div>
           <button onClick={onClose} style={{ color: "var(--text-muted)" }}>
             <X size={18} />
@@ -196,6 +305,343 @@ export default function AddItemModal({ onClose, onSuccess, initialMode = "sell" 
               <span>{error}</span>
             </div>
           )}
+
+          {/* ─────────────────────────────────────────────────────────────
+              MANDATORY PHOTO UPLOAD & AI SAFETY SCAN SECTION
+          ───────────────────────────────────────────────────────────── */}
+          <div style={{
+            marginBottom: "22px",
+            background: "var(--bg-surface-sunken)",
+            borderRadius: "var(--radius-md)",
+            padding: "16px",
+            border: "1px solid var(--border-subtle)"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <label style={{ fontSize: "0.84rem", fontWeight: 700, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: "6px" }}>
+                <Camera size={16} />
+                <span>Item Photo * (Mandatory for AI Safety Verification)</span>
+              </label>
+              {images.length > 0 && !aiScanning && (
+                <button
+                  type="button"
+                  onClick={() => runAiSafetyScan(images[0], title, category, description, true)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    fontSize: "0.74rem",
+                    color: "var(--text-muted)",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer"
+                  }}
+                >
+                  <RefreshCw size={12} />
+                  <span>Re-scan</span>
+                </button>
+              )}
+            </div>
+
+            {/* Dropzone */}
+            {images.length === 0 ? (
+              <div style={{
+                border: "2px dashed var(--border-default)",
+                borderRadius: "var(--radius-md)",
+                padding: "24px 16px",
+                textAlign: "center",
+                background: "var(--bg-surface)",
+                cursor: "pointer",
+                position: "relative"
+              }}>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  disabled={uploadingImage}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: "100%",
+                    opacity: 0,
+                    cursor: "pointer"
+                  }}
+                />
+                <Upload size={28} color="var(--text-muted)" style={{ margin: "0 auto 8px" }} />
+                <div style={{ fontSize: "0.88rem", fontWeight: 700 }}>
+                  {uploadingImage ? "Uploading & preparing safety scan..." : "Click or drag item photo here"}
+                </div>
+                <div style={{ fontSize: "0.74rem", color: "var(--text-muted)", marginTop: "4px" }}>
+                  Sharp, well-lit photos required • Evaluated by CampusMart AI Safety Intelligence
+                </div>
+              </div>
+            ) : (
+              <div>
+                {/* Thumbnail Display */}
+                <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", marginBottom: "14px" }}>
+                  {images.map((imgUrl, idx) => (
+                    <div key={idx} style={{ position: "relative", width: "75px", height: "75px", borderRadius: "10px", overflow: "hidden", border: "1px solid var(--border-subtle)" }}>
+                      <img src={api.getImageUrl(imgUrl)} alt="Preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <button
+                        type="button"
+                        onClick={() => removeImage(idx)}
+                        style={{
+                          position: "absolute",
+                          top: "3px",
+                          right: "3px",
+                          width: "20px",
+                          height: "20px",
+                          borderRadius: "50%",
+                          background: "rgba(0,0,0,0.75)",
+                          color: "#f87171",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          border: "none",
+                          cursor: "pointer"
+                        }}
+                      >
+                        <X size={12} />
+                      </button>
+                      {idx === 0 && (
+                        <span style={{
+                          position: "absolute",
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          background: "var(--accent-secondary)",
+                          color: "#FEFEFE",
+                          fontSize: "0.55rem",
+                          fontWeight: 800,
+                          textAlign: "center",
+                          padding: "1px 0"
+                        }}>
+                          PRIMARY
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                  
+                  <div style={{ position: "relative", width: "75px", height: "75px", borderRadius: "10px", border: "2px dashed var(--border-subtle)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", background: "var(--bg-surface)" }}>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      disabled={uploadingImage || aiScanning}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        height: "100%",
+                        opacity: 0,
+                        cursor: "pointer"
+                      }}
+                    />
+                    <Upload size={18} color="var(--text-muted)" />
+                    <span style={{ fontSize: "0.65rem", color: "var(--text-muted)", marginTop: "4px" }}>Add photo</span>
+                  </div>
+                </div>
+
+                {/* Progressive Scanning Animation */}
+                {aiScanning && (
+                  <div style={{
+                    padding: "14px 16px",
+                    borderRadius: "var(--radius-md)",
+                    background: "rgba(56, 189, 248, 0.08)",
+                    border: "1px solid rgba(56, 189, 248, 0.25)",
+                    marginBottom: "8px"
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
+                      <Loader2 size={16} className="animate-spin" color="#38bdf8" />
+                      <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#38bdf8" }}>
+                        CampusMart AI Safety Intelligence Scanning...
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        {scanStep >= 1 ? <Check size={12} color="#34d399" /> : <span style={{ width: "12px" }}>•</span>}
+                        <span>1. Image Format & Physical Integrity Verification</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        {scanStep >= 2 ? <Check size={12} color="#34d399" /> : <span style={{ width: "12px" }}>•</span>}
+                        <span>2. Visual Quality & Laplacian Defocus Analysis</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        {scanStep >= 3 ? <Check size={12} color="#34d399" /> : <span style={{ width: "12px" }}>•</span>}
+                        <span>3. Non-Closed-Set Vision & Domain Classification</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        {scanStep >= 4 ? <Check size={12} color="#34d399" /> : <span style={{ width: "12px" }}>•</span>}
+                        <span>4. Campus Policy Compliance (Allowed / Unsupported / Prohibited)</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        {scanStep >= 5 ? <Check size={12} color="#34d399" /> : <span style={{ width: "12px" }}>•</span>}
+                        <span>5. Listing Text & Physical Object Consistency</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* AI VERDICT CARDS */}
+                {!aiScanning && aiVerdict && (
+                  <div>
+                    {aiVerdict.decision === "APPROVE" && (
+                      <div style={{
+                        padding: "14px 16px",
+                        borderRadius: "var(--radius-md)",
+                        background: "rgba(52, 211, 153, 0.1)",
+                        border: "1px solid rgba(52, 211, 153, 0.3)",
+                        color: "#059669"
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 800, fontSize: "0.85rem" }}>
+                            <ShieldCheck size={18} color="#10b981" />
+                            <span>CAMPUSMART VERIFIED • APPROVED</span>
+                          </div>
+                          <span style={{
+                            padding: "2px 8px",
+                            borderRadius: "9999px",
+                            background: "rgba(16, 185, 129, 0.2)",
+                            fontSize: "0.72rem",
+                            fontWeight: 700
+                          }}>
+                            {Math.round(aiVerdict.object_confidence * 100)}% Confidence
+                          </span>
+                        </div>
+                        <div style={{ fontSize: "0.80rem", color: "var(--text-primary)", marginBottom: "4px" }}>
+                          <strong>Identified Object:</strong> {aiVerdict.object_detected} • <strong>Risk Level:</strong> {aiVerdict.risk_level}
+                        </div>
+                        <div style={{ fontSize: "0.74rem", color: "var(--text-secondary)" }}>
+                          {aiVerdict.reason}
+                        </div>
+                      </div>
+                    )}
+
+                    {aiVerdict.decision === "REVIEW" && (
+                      <div style={{
+                        padding: "14px 16px",
+                        borderRadius: "var(--radius-md)",
+                        background: "rgba(245, 158, 11, 0.1)",
+                        border: "1px solid rgba(245, 158, 11, 0.35)",
+                        color: "#b45309"
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 800, fontSize: "0.85rem" }}>
+                            <AlertTriangle size={18} color="#f59e0b" />
+                            <span>NEEDS MANUAL SAFETY REVIEW</span>
+                          </div>
+                          <span style={{
+                            padding: "2px 8px",
+                            borderRadius: "9999px",
+                            background: "rgba(245, 158, 11, 0.2)",
+                            fontSize: "0.72rem",
+                            fontWeight: 700
+                          }}>
+                            Review Required
+                          </span>
+                        </div>
+                        <div style={{ fontSize: "0.78rem", color: "var(--text-primary)", marginBottom: "8px" }}>
+                          {aiVerdict.reason}
+                        </div>
+                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            onClick={() => runAiSafetyScan(images[0], title, category, description, true)}
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: "6px",
+                              background: "#f59e0b",
+                              color: "#FFFFFF",
+                              fontSize: "0.74rem",
+                              fontWeight: 700,
+                              border: "none",
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "4px"
+                            }}
+                          >
+                            <RefreshCw size={12} />
+                            <span>Verify with Details</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setImages([]);
+                              setAiVerdict(null);
+                            }}
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: "6px",
+                              background: "rgba(245, 158, 11, 0.15)",
+                              color: "#b45309",
+                              fontSize: "0.74rem",
+                              fontWeight: 600,
+                              border: "1px solid rgba(245, 158, 11, 0.3)",
+                              cursor: "pointer"
+                            }}
+                          >
+                            <span>Upload Different Photo</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {aiVerdict.decision === "BLOCK" && (
+                      <div style={{
+                        padding: "14px 16px",
+                        borderRadius: "var(--radius-md)",
+                        background: "rgba(239, 68, 68, 0.1)",
+                        border: "1px solid rgba(239, 68, 68, 0.35)",
+                        color: "#b91c1c"
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 800, fontSize: "0.85rem" }}>
+                            <ShieldAlert size={18} color="#ef4444" />
+                            <span>LISTING BLOCKED BY SAFETY POLICY</span>
+                          </div>
+                          <span style={{
+                            padding: "2px 8px",
+                            borderRadius: "9999px",
+                            background: "rgba(239, 68, 68, 0.2)",
+                            fontSize: "0.72rem",
+                            fontWeight: 700
+                          }}>
+                            Blocked
+                          </span>
+                        </div>
+                        <div style={{ fontSize: "0.78rem", color: "var(--text-primary)", marginBottom: "8px" }}>
+                          {aiVerdict.reason}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setImages([]);
+                            setAiVerdict(null);
+                          }}
+                          style={{
+                            padding: "6px 12px",
+                            borderRadius: "6px",
+                            background: "#ef4444",
+                            color: "#FFFFFF",
+                            fontSize: "0.74rem",
+                            fontWeight: 700,
+                            border: "none",
+                            cursor: "pointer"
+                          }}
+                        >
+                          Replace with Permitted Item
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Mode Selector Checkboxes */}
           <div style={{ marginBottom: "20px" }}>
@@ -275,7 +721,7 @@ export default function AddItemModal({ onClose, onSuccess, initialMode = "sell" 
             </label>
             <input
               type="text"
-              placeholder="e.g. Casio FX-991ES Plus Calculator"
+              placeholder="e.g. Casio FX-991ES Plus Scientific Calculator"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               required
@@ -457,105 +903,43 @@ export default function AddItemModal({ onClose, onSuccess, initialMode = "sell" 
             />
           </div>
 
-          {/* Image Upload Area with Drag & Drop & Previews */}
-          <div style={{ marginBottom: "20px" }}>
-            <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, marginBottom: "6px", color: "var(--text-secondary)" }}>
-              Item Photos
-            </label>
-            
-            <div style={{
-              border: "2px dashed var(--border-subtle)",
-              borderRadius: "var(--radius-md)",
-              padding: "20px",
-              textAlign: "center",
-              background: "var(--bg-surface-elevated)",
-              cursor: "pointer",
-              position: "relative"
-            }}>
-              <input
-                type="file"
-                multiple
-                accept="image/*"
-                onChange={handleImageUpload}
-                disabled={uploadingImage}
+          {/* Action buttons & Publish Safeguard */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "24px" }}>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+              <button type="button" className="btn-secondary" onClick={onClose} disabled={submitting}>
+                Cancel
+              </button>
+              <button 
+                type="submit" 
+                className="btn-primary" 
+                disabled={submitting || uploadingImage || aiScanning || !aiVerdict || aiVerdict.decision !== "APPROVE"}
                 style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  height: "100%",
-                  opacity: 0,
-                  cursor: "pointer"
+                  opacity: (!aiVerdict || aiVerdict.decision !== "APPROVE") ? 0.6 : 1,
+                  cursor: (!aiVerdict || aiVerdict.decision !== "APPROVE") ? "not-allowed" : "pointer"
                 }}
-              />
-              <Upload size={24} color="var(--text-muted)" style={{ margin: "0 auto 8px" }} />
-              <div style={{ fontSize: "0.84rem", fontWeight: 600 }}>
-                {uploadingImage ? "Uploading..." : "Click or drag photos here"}
-              </div>
-              <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "4px" }}>
-                Supports JPG, PNG, WEBP • First photo is primary
-              </div>
+              >
+                <PlusCircle size={16} />
+                <span>{submitting ? "Publishing..." : "Publish Listing"}</span>
+              </button>
             </div>
 
-            {/* Preview Thumbnails */}
-            {images.length > 0 && (
-              <div style={{ display: "flex", gap: "10px", marginTop: "12px", flexWrap: "wrap" }}>
-                {images.map((imgUrl, idx) => (
-                  <div key={idx} style={{ position: "relative", width: "70px", height: "70px", borderRadius: "8px", overflow: "hidden", border: "1px solid var(--border-subtle)" }}>
-                    <img src={api.getImageUrl(imgUrl)} alt="Preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    <button
-                      type="button"
-                      onClick={() => removeImage(idx)}
-                      style={{
-                        position: "absolute",
-                        top: "2px",
-                        right: "2px",
-                        width: "20px",
-                        height: "20px",
-                        borderRadius: "50%",
-                        background: "rgba(0,0,0,0.7)",
-                        color: "#f87171",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center"
-                      }}
-                    >
-                      <X size={12} />
-                    </button>
-                    {idx === 0 && (
-                      <span style={{
-                        position: "absolute",
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        background: "var(--accent-primary)",
-                        color: "#FFFFFF",
-                        fontSize: "0.55rem",
-                        fontWeight: 800,
-                        textAlign: "center"
-                      }}>
-                        PRIMARY
-                      </span>
-                    )}
-                  </div>
-                ))}
+            {/* Publishing Safeguard Helper Text */}
+            {(!aiVerdict || aiVerdict.decision !== "APPROVE") && (
+              <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", textAlign: "right" }}>
+                {images.length === 0 
+                  ? "ⓘ Photo upload is required to verify item safety."
+                  : aiScanning 
+                  ? "ⓘ Verifying safety with CampusMart AI..."
+                  : aiVerdict?.decision === "REVIEW"
+                  ? "ⓘ Listing requires a clearer photo or manual review before publication."
+                  : aiVerdict?.decision === "BLOCK"
+                  ? "ⓘ Prohibited/unsupported items cannot be published."
+                  : "ⓘ AI Safety approval is required to publish."}
               </div>
             )}
-          </div>
-
-          {/* Action buttons */}
-          <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
-            <button type="button" className="btn-secondary" onClick={onClose} disabled={submitting}>
-              Cancel
-            </button>
-            <button type="submit" className="btn-primary" disabled={submitting || uploadingImage}>
-              <PlusCircle size={16} />
-              <span>{submitting ? "Publishing..." : "Publish Listing"}</span>
-            </button>
           </div>
         </form>
       </div>
     </div>
   );
 }
-
